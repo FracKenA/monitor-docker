@@ -113,12 +113,12 @@ service_online(){
     service merlind start
     service naemon start
     service httpd start
-    service nrpe start
-    service processor start
+    # service nrpe start
+    # service processor start
     service rrdcached start
     service synergy start
-    service smsd start
-    service collector start
+    # service smsd start
+    # service collector start
 }
 
 advertise_masters(){
@@ -270,23 +270,53 @@ run_debug(){
 
 }
 
+volume_mount(){
+    if [[ "${VOLUME_MOUNT}" =~ ^(yes|YES|Yes)$ ]]; then    
+        if [[ "${VOLUME_INITIALIZE}" =~ ^(yes|YES|Yes)$ ]]; then
+            print "info" "Initializing Local Persistent Storage"
+	    #mkdir ${VOLUME_PATH}/etc
+	    #mkdir ${VOLUME_PATH}/ssh
+	    #mkdir ${VOLUME_PATH}/perfdata
+	    #mkdir ${VOLUME_PATH}/mysql
+	    mkdir ${VOLUME_PATH}/merlin
+	    mv /opt/monitor/etc $VOLUME_PATH/
+            mv /opt/monitor/.ssh $VOLUME_PATH/
+            mv /opt/monitor/op5/pnp/perfdata $VOLUME_PATH/
+            mv /var/lib/mysql $VOLUME_PATH/
+            mv /opt/monitor/op5/merlin/merin.conf $VOLUME_PATH/merin/merlin.conf
+        else
+            print "info" "Local Persistent Storage Existing Assumed"
+        fi
+        if [ -z ${VOLUME_PATH} ]; then
+            print "warn" "Volume Path Is Not Set!"
+        else
+            print "info" "The persistent volume path is: ${VOLUME_PATH}"
+	    ln -s ${VOLUME_PATH}/etc /opt/monitor/
+	    ln -s ${VOLUME_PATH}/.ssh /opt/monitor/.ssh
+	    ln -s ${VOLUME_PATH}/perfdata /opt/monitor/op5/pnp/
+	    ln -s ${VOLUME_PATH}/mysql /var/lib/
+	    ln -s ${VOLUME_PATH}/merlin/merlin.conf /opt/monitor/op5/merlin/merlin.conf
+        fi                                                             
+    fi                                                                 
+}
 
 main(){
+    volume_mount
     check_debug
-    trigger_hooks prestart
-    import_backup
+    # trigger_hooks prestart
+    # import_backup
     import_license
-    if [[ "${IS_PEER}" =~ ^(yes|YES|Yes)$ ]]; then
-        print "info" "Checking For Online Peers"
-        advertise_peers add 
-    else
-        echo -e "No Peers to Add"
-    fi    
-    if [[ "${IS_POLLER}" =~ ^(yes|YES|Yes)$ ]]; then
-        advertise_masters add
-    else
-        echo -e "No Masters to Add"
-    fi    
+    # if [[ "${IS_PEER}" =~ ^(yes|YES|Yes)$ ]]; then
+    #     print "info" "Checking For Online Peers"
+    #     advertise_peers add 
+    # else
+    #     echo -e "No Peers to Add"
+    # fi    
+    # if [[ "${IS_POLLER}" =~ ^(yes|YES|Yes)$ ]]; then
+    #     advertise_masters add
+    # else
+    #     echo -e "No Masters to Add"
+    # fi    
     service_online
     keep_swimming
 }

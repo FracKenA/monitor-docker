@@ -17,15 +17,18 @@ SELF_HOSTNAME=monitormaster \
 DEBUG=0 \
 ROOT_PASSWORD=monitor \
 IMPORT_BACKUP= \
-LICENSE_KEY=
+LICENSE_KEY= \
+VOLUME_MOuNT=NO \
+VOLUME_PATH=/mnt/nfs \
+VOLUME_INITIALIZE=NO
 
 STOPSIGNAL SIGTERM
 
 RUN \
     yum -y install epel-release && \
-    yum -y install wget nc tmux multitail openssh-server python-requests && \
+    yum -y install wget nc tmux multitail openssh-server python-requests perl-Module-Load && \
     wget $OP5_MONITOR_SOFTWARE_URL -O /tmp/op5-software.tar.gz && \
-    mkdir -p /tmp/op5-monitor && \
+    mkdir -p /tmp/op5-monitor && \ 
     tar -zxf /tmp/op5-software.tar.gz -C /tmp/op5-monitor --strip-components=1 && \
     cd /tmp/op5-monitor && \
     ./install.sh --silent && \
