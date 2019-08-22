@@ -274,12 +274,12 @@ volume_mount(){
     if [[ "${VOLUME_MOUNT}" =~ ^(yes|YES|Yes)$ ]]; then    
         if [[ "${VOLUME_INITIALIZE}" =~ ^(yes|YES|Yes)$ ]]; then
             print "info" "Initializing Local Persistent Storage"
-	    #mkdir ${VOLUME_PATH}/etc
-	    #mkdir ${VOLUME_PATH}/ssh
-	    #mkdir ${VOLUME_PATH}/perfdata
-	    #mkdir ${VOLUME_PATH}/mysql
-	    mkdir ${VOLUME_PATH}/merlin
-	    mv /opt/monitor/etc $VOLUME_PATH/
+	        # mkdir ${VOLUME_PATH}/etc
+	        # mkdir ${VOLUME_PATH}/ssh
+	        # mkdir ${VOLUME_PATH}/perfdata
+	        # mkdir ${VOLUME_PATH}/mysql
+	        mkdir ${VOLUME_PATH}/merlin
+	        mv /opt/monitor/etc $VOLUME_PATH/
             mv /opt/monitor/.ssh $VOLUME_PATH/
             mv /opt/monitor/op5/pnp/perfdata $VOLUME_PATH/
             mv /var/lib/mysql $VOLUME_PATH/
@@ -291,13 +291,89 @@ volume_mount(){
             print "warn" "Volume Path Is Not Set!"
         else
             print "info" "The persistent volume path is: ${VOLUME_PATH}"
-	    ln -s ${VOLUME_PATH}/etc /opt/monitor/
-	    ln -s ${VOLUME_PATH}/.ssh /opt/monitor/.ssh
-	    ln -s ${VOLUME_PATH}/perfdata /opt/monitor/op5/pnp/
-	    ln -s ${VOLUME_PATH}/mysql /var/lib/
-	    ln -s ${VOLUME_PATH}/merlin/merlin.conf /opt/monitor/op5/merlin/merlin.conf
+	        ln -s ${VOLUME_PATH}/etc /opt/monitor/etc
+	        ln -s ${VOLUME_PATH}/.ssh /opt/monitor/.ssh
+	        ln -s ${VOLUME_PATH}/perfdata /opt/monitor/op5/pnp/
+	        ln -s ${VOLUME_PATH}/mysql /var/lib/mysql
+	        ln -s ${VOLUME_PATH}/merlin/merlin.conf /opt/monitor/op5/merlin/merlin.conf
         fi                                                             
     fi                                                                 
+}
+
+set_default_route(){
+    BGP_ADDR=$(ip addr  | grep "scope global lo"   | tr '/' ' '| tr -s " " | tr " " "\n" | grep -A1 inet | tail -1)
+    GW_INT=$(ip route | grep default | tr -s " " | tr " " "\n"  | grep -A1 dev  | tail -1)
+    GW_ADDR=$(ip route | grep default | tr -s " " | tr " " "\n"  | grep -A1 via  | tail -1)
+    GW_SRC_ADDR=$(ip route | grep default | tr -s " " | tr " " "\n"  | grep -A1 src  | tail -1)
+
+    #echo "OP5_BGP_ADDR: $OP5_BGP_ADDR"
+    #echo "   BGP_ADDR: $BGP_ADDR"
+    #echo "GW_SRC_ADDR: $GW_SRC_ADDR"
+    #echo "    GW_ADDR: $GW_ADDR"
+    #echo "     GW_INT: $GW_INT"
+
+    EXITCODE=1
+
+    if [ "x" = "x$OP5_BGP_ADDR" ]; then
+        echo "No configured BGP addr found, quitting"
+        exit $EXITCODE
+    fi
+
+    EXITCODE=$(($EXITCODE + 1))
+
+    if [ "x" = "x$BGP_ADDR" ]; then
+        echo "No BGP addr found, quitting"
+        exit $EXITCODE
+    fi
+
+    EXITCODE=$(($EXITCODE + 1))
+
+    if [ "x$OP5_BGP_ADDR" != "x$BGP_ADDR" ]; then
+        echo "Configured BGP address $OP5_BGP_ADDR does not match detected address $BGP_ADDR, quitting"
+        exit $EXITCODE
+    fi
+
+    EXITCODE=$(($EXITCODE + 1))
+
+    if [ "x" = "x$GW_ADDR" ]; then
+        echo "Could not determine gateway address, quitting"
+        exit $EXITCODE
+    fi
+
+    EXITCODE=$(($EXITCODE + 1))
+
+    if [ "x" = "x$GW_INT" ]; then
+        echo "Could not determine gateway interface, quitting"
+        exit $EXITCODE
+    fi
+
+    EXITCODE=$(($EXITCODE + 1))
+
+    ## route set correctly
+    if [ "x$OP5_BGP_ADDR" = "x$GW_SRC_ADDR" ]; then
+        echo "Routing is correct. Exiting without changes"
+        exit 0
+    fi
+
+    echo "Source-address needs setting"
+
+    ## delete the current default route
+    ip route del default
+
+    ## add the new one, with the correct source IP
+    ip route add default via $GW_ADDR dev $GW_INT src $BGP_ADDR
+
+    ## verify/fix
+    CUR_ROUTE=$(ip route | grep default)
+    if [ "x" = "x$CUR_ROUTE" ]; then
+        echo "No default route found, trying original one"
+        ip route add default via $GW_ADDR dev $GW_INT
+        exit $EXITCODE
+    else
+        echo "Success! Default route via $GW_ADDR dev $GW_INT src $BGP_ADDR"
+    fi
+
+    exit 0
 }
 
 main(){
@@ -306,17 +382,23 @@ main(){
     # trigger_hooks prestart
     # import_backup
     import_license
-    # if [[ "${IS_PEER}" =~ ^(yes|YES|Yes)$ ]]; then
-    #     print "info" "Checking For Online Peers"
-    #     advertise_peers add 
-    # else
-    #     echo -e "No Peers to Add"
-    # fi    
-    # if [[ "${IS_POLLER}" =~ ^(yes|YES|Yes)$ ]]; then
-    #     advertise_masters add
-    # else
-    #     echo -e "No Masters to Add"
-    # fi    
+    if [[ "${IS_PEER}" =~ ^(yes|YES|Yes)$ ]]; then
+        print "info" "Checking For Online Peers"
+        advertise_peers add 
+    else
+        echo -e "No Peers to Add"
+    fi    
+    if [[ "${IS_POLLER}" =~ ^(yes|YES|Yes)$ ]]; then
+        advertise_masters add
+    else
+        echo -e "No Masters to Add"
+    fi
+    if [[ ! -z "${OP5_BGP_ADDR}" ]]
+        then
+                set_default_route
+        else
+                print "info" "No BGP Address Present"
+    fi
     service_online
     keep_swimming
 }
