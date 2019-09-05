@@ -1,3 +1,5 @@
+# THIS IS A PERSONAL TEST BED, DO NOT EXPECT ANY USABLE RESULTS.
+
 # op5-docker
 > This is a basic example of how you might deploy OP5 Monitor via Docker. This is only a guide and several pre-configuration steps must be taken before this will work. You will need to build the docker image prior to use.
 

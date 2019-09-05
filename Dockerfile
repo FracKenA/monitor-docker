@@ -9,19 +9,18 @@ ARG OP5_MONITOR_SOFTWARE_URL=https://d2ubxhm80y3bwr.cloudfront.net/Downloads/op5
 LABEL op5_version="OP5 Monitor Latest Version"
 LABEL maintainer="OP5,Ken Dobbins"
 
-ENV IS_POLLER=NO \
-MASTER_ADDRESSES= \
-IS_PEER=NO \
-PEER_HOSTNAMES= \
-HOSTGROUPS= \
-SELF_HOSTNAME=monitormaster \
-DEBUG=0 \
-ROOT_PASSWORD=monitor \
-IMPORT_BACKUP= \
-LICENSE_KEY= \
-VOLUME_MOUNT=NO \
-VOLUME_PATH=/mnt/junk/ \
-VOLUME_INITIALIZE=NO
+#ENV IS_POLLER=NO \
+#MASTER= \
+#IS_PEER=NO \
+#HOSTGROUPS= \
+#SELF_HOSTNAME=monitormaster \
+#DEBUG=0 \
+#ROOT_PASSWORD=monitor \
+#IMPORT_BACKUP= \
+#LICENSE_KEY= \
+#VOLUME_MOUNT=NO \
+#VOLUME_PATH=/mnt/junk/ \
+#VOLUME_INITIALIZE=NO
 
 STOPSIGNAL SIGTERM
 
@@ -48,5 +47,8 @@ RUN \
 
 # OP5 Web UI, NRPE, Merlind, SSH, SNMPd 
 EXPOSE 80 443 5666 15551 2222 161 162
+
+HEALTHCHECK --interval=90s --timeout=10s --retries=3 \
+      CMD mon check distribution --no-perfdata || exit 2
 
 CMD ["/usr/libexec/entrypoint.d/entrypoint.sh"]
