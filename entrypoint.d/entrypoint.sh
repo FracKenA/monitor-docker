@@ -250,32 +250,65 @@ if [ $1 == "add" ]; then
                 fi
                 break
             done
-        for peer in `ssh ${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes mon node list --type=peer`
+        for master_peer in `ssh ${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes mon node list --type=peer`
             do
-                mon node add $peer type=master
-                mon node ctrl $peer mon node add ${SELF_HOSTNAME} type=poller hostgroup=${HOSTGROUPS} takeover=no
+                mon node add ${master_peer} type=master
+                mon node ctrl ${master_peer} mon node add ${SELF_HOSTNAME} type=poller hostgroup=${HOSTGROUPS} takeover=no
                 while true; 
                     do
                         sleep $[ ( $RANDOM % 10 )  + 1 ]s
-                        ssh root@$peer -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -p 1 -w 1:1 -c 1:1 -C naemon"
+                        ssh root@${master_peer} -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -p 1 -w 1:1 -c 1:1 -C naemon"
                         if [[ $? == 0 ]]; then
                             naemon=0
                         else
                             naemon=1
                         fi
                         sleep $[ ( $RANDOM % 10 )  + 1 ]s
-                        ssh root@$peer -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -w 2:1 -c 1:1 -C merlind"
+                        ssh root@${master_peer} -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -w 2:1 -c 1:1 -C merlind"
                         if [[ $? == 0 ]]; then
                             merlin=0
                         else
                             merlin=1
                         fi
-                        if [[ $naemon == 0 ]] && [[ $merlin == 0 ]]; then
-                            print "info" "Monitor is UP on $peer"
-                            print "info" "Performing Restart On $peer"
-                            mon node ctrl $node mon restart
+                        if [[ ${naemon} == 0 ]] && [[ ${merlin} == 0 ]]; then
+                            print "info" "Monitor is UP on ${master_peer}"
+                            print "info" "Performing Restart On ${master_peer}"
+                            mon node ctrl ${master_peer} mon restart
                         else
-                            print "info" "Monitor is DOWN on $peer"
+                            print "info" "Monitor is DOWN on ${master_peer}"
+                            print "info" "Testing Again"
+                            continue
+                        fi
+                        break
+                    done
+            done
+        poller_peer_list=$(ssh masterblaster.lab1.tul.itrsgroup.com -o IdentitiesOnly=yes -o BatchMode=yes mon node show |sed -n '/poller/,/^$/p'| sed -n "/$HOSTGROUP/,/^$/p"|grep ADDRESS|awk -F = '{print $2}')
+        for poller_peer in ${poller_peer_list}
+            do
+                mon node add ${poller_peer} type=peer
+                mon node ctrl ${poller_peer} mon node add ${SELF_HOSTNAME} type=peer
+                while true; 
+                    do
+                        sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                        ssh root@${poller_peer} -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -p 1 -w 1:1 -c 1:1 -C naemon"
+                        if [[ $? == 0 ]]; then
+                            naemon=0
+                        else
+                            naemon=1
+                        fi
+                        sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                        ssh root@${poller_peer} -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -w 2:1 -c 1:1 -C merlind"
+                        if [[ $? == 0 ]]; then
+                            merlin=0
+                        else
+                            merlin=1
+                        fi
+                        if [[ ${naemon} == 0 ]] && [[ ${merlin} == 0 ]]; then
+                            print "info" "Monitor is UP on ${master_peer}"
+                            print "info" "Performing Restart On ${master_peer}"
+                            mon node ctrl ${poller_peer} mon restart
+                        else
+                            print "info" "Monitor is DOWN on ${poller_peer}"
                             print "info" "Testing Again"
                             continue
                         fi
@@ -520,3 +553,7 @@ main(){
 # Graceful shutdown handling and run main()
 trap shutdown_sigend SIGKILL SIGTERM SIGHUP SIGINT EXIT
 main
+
+
+
+ for i in cat test.txt |sed -n '/poller/,/^$/p'| sed -n "/$HOSTGROUP/,/^$/p"|grep ADDRESS | awk -F = '{print $2}'; do printf "this is $i"; done
