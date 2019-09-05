@@ -209,12 +209,13 @@ if [ $1 == "add" ]; then
                     print "info" "hostgroup exists"
                 else
                     print "info" "adding hostgroup"
-                    mon node ctrl ${MASTER} "op5-manage-users --update --username=api_user --realname="api_user" --group=admins --password=api_user --modules=Default"
-                    curl --insecure -XPOST -H 'content-type: application/json' -d '{"name": "test","file_id": "etc/hostgroups.cfg"}' 'https://${MASTER}/api/config/hostgroup' -u 'api_user:api_user'
+                    api_user=$(date +%s | sha256sum | base64 | head -c 32 ; echo)
+                    mon node ctrl ${MASTER} "op5-manage-users --update --username=$api_user --realname=$api_user --group=admins --password=$api_user --modules=Default"
+                    curl --insecure -XPOST -H 'content-type: application/json' -d '{"name": "test","file_id": "etc/hostgroups.cfg"}' 'https://${MASTER}/api/config/hostgroup' -u "$api_user:$api_user"
                     sleep 5s
-                    curl --insecure -XPOST 'https://${MASTER}/api/config/change' -u 'api_user:api_user'
+                    curl --insecure -XPOST 'https://${MASTER}/api/config/change' -u "$api_user:$api_user"
                     sleep 15s
-                    mon node ctrl ${MASTER} "op5-manage-users --remove --username=api_user"
+                    mon node ctrl ${MASTER} "op5-manage-users --remove --username=$api_user"
                     continue
                 fi
                 break
