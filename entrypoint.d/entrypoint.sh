@@ -193,6 +193,40 @@ if [ $1 == "add" ]; then
                         break
                     done
             done
+        poller_list=$(ssh root@${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes mon node show |sed -n '/poller/,/^$/p'|grep ADDRESS|awk -F = '{print $2}')
+        for poller in ${poller_list}
+            do
+                poller_hostgroup=$(ssh root@${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes mon node show |sed -n "/${POLLER}/,/^$/p"|grep HOSTGROUP|awk -F = '{print $2}')
+                mon node add $poller type=poller type=poller hostgroup=${poller_hostgroup} takeover=no
+                mon node ctrl $poller mon node add ${SELF_HOSTNAME} type=master
+                while true; 
+                    do
+                        sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                        ssh root@$peer -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -p 1 -w 1:1 -c 1:1 -C naemon"
+                        if [[ $? == 0 ]]; then
+                            naemon=0
+                        else
+                            naemon=1
+                        fi
+                        sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                        ssh root@$peer -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -w 2:1 -c 1:1 -C merlind"
+                        if [[ $? == 0 ]]; then
+                            merlin=0
+                        else
+                            merlin=1
+                        fi
+                        if [[ $naemon == 0 ]] && [[ $merlin == 0 ]]; then
+                            print "info" "Monitor is UP on $poller"
+                            print "info" "Performing Restart On $poller"
+                            mon node ctrl $poller mon restart
+                        else
+                            print "info" "Monitor is DOWN on $poller"
+                            print "info" "Testing Again"
+                            continue
+                        fi
+                        break
+                    done
+            done
     done
 else
     print "info" "Nothing to do for master"
@@ -282,7 +316,7 @@ if [ $1 == "add" ]; then
                         break
                     done
             done
-        poller_peer_list=$(ssh masterblaster.lab1.tul.itrsgroup.com -o IdentitiesOnly=yes -o BatchMode=yes mon node show |sed -n '/poller/,/^$/p'| sed -n "/$HOSTGROUP/,/^$/p"|grep ADDRESS|awk -F = '{print $2}')
+        poller_peer_list=$(ssh ${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes mon node show |sed -n '/poller/,/^$/p'| sed -n "/$HOSTGROUP/,/^$/p"|grep ADDRESS|awk -F = '{print $2}')
         for poller_peer in ${poller_peer_list}
             do
                 mon node add ${poller_peer} type=peer
