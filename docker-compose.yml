@@ -1,0 +1,109 @@
+version: '3.3'
+services:
+    monitor-master-1:
+        ports:
+            - '443:443'
+            - '2222:2222'
+            - 15551
+        environment:
+            - SELF_HOSTNAME=master-op5-1.op5.local
+        container_name: master-op5-1.op5.local
+        image: 'monitor-docker:latest'
+    monitor-master-2:
+        ports:
+            - 443
+            - 2222
+            - 15551
+        environment:
+            - SELF_HOSTNAME=master-op5-2.op5.local
+            - IS_PEER=YES
+            - PEER_HOSTNAMES=master-op5-1.op5.local
+        container_name: master-op5-2.op5.local
+        depends_on:
+            - monitor-master-1
+        image: 'monitor-docker:latest'
+    monitor-master-3:
+        ports:
+            - 443
+            - 2222
+            - 15551
+        environment:
+            - SELF_HOSTNAME=master-op5-3.op5.local
+            - IS_PEER=YES
+            - 'PEER_HOSTNAMES=master-op5-1.op5.local,master-op5-2.op5.local'
+        container_name: master-op5-3.op5.local
+        depends_on:
+            - monitor-master-1
+            - monitor-master-2
+        image: 'monitor-docker:latest'
+    monitor-poller-1:
+        ports:
+            - 443
+            - 2222
+            - 15551
+        environment:
+            - SELF_HOSTNAME=poller-op5-1.op5.local
+            - IS_POLLER=YES
+            - HOSTGROUPS=pollergroup1
+            - 'MASTER_ADDRESSES=master-op5-1.op5.local,master-op5-2.op5.local,master-op5-3.op5.local'
+        container_name: poller-op5-1.op5.local
+        depends_on:
+            - monitor-master-1
+            - monitor-master-2
+            - monitor-master-3
+        image: 'monitor-docker:latest'
+    monitor-poller-2:
+        ports:
+            - 443
+            - 2222
+            - 15551
+        environment:
+            - SELF_HOSTNAME=poller-op5-2.op5.local
+            - IS_POLLER=YES
+            - HOSTGROUPS=pollergroup1
+            - PEER_HOSTNAMES=poller-op5-1.op5.local
+            - 'MASTER_ADDRESSES=master-op5-1.op5.local,master-op5-2.op5.local,master-op5-3.op5.local'
+        container_name: poller-op5-2.op5.local
+        depends_on:
+            - monitor-master-1
+            - monitor-master-2
+            - monitor-master-3
+            - monitor-poller-1
+        image: 'monitor-docker:latest'
+    monitor-poller-3:
+        ports:
+            - 443
+            - 2222
+            - 15551
+        environment:
+            - SELF_HOSTNAME=poller-op5-3.op5.local
+            - IS_POLLER=YES
+            - HOSTGROUPS=pollergroup2
+            - 'MASTER_ADDRESSES=master-op5-1.op5.local,master-op5-2.op5.local,master-op5-3.op5.local'
+        container_name: poller-op5-3.op5.local
+        depends_on:
+            - monitor-master-1
+            - monitor-master-2
+            - monitor-master-3
+        image: 'monitor-docker:latest'
+    monitor-poller-4:
+        ports:
+            - 443
+            - 2222
+            - 15551
+        environment:
+            - SELF_HOSTNAME=poller-op5-4.op5.local
+            - IS_POLLER=YES
+            - HOSTGROUPS=pollergroup2
+            - PEER_HOSTNAMES=poller-op5-3.op5.local
+            - 'MASTER_ADDRESSES=master-op5-1.op5.local,master-op5-2.op5.local,master-op5-3.op5.local'
+        container_name: poller-op5-4.op5.local
+        depends_on:
+            - monitor-master-1
+            - monitor-master-2
+            - monitor-master-3
+            - monitor-poller-3
+        image: 'monitor-docker:latest'
+
+networks:
+  op5net:

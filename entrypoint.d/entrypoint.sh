@@ -12,7 +12,7 @@
 #Imported from start.sh
 mkdir -p /etc/snmp
 touch /etc/snmp/snmp.local.conf
-echo "mibs +all" >> /etc/snmp/snmp.local.conf
+print "mibs +all" >> /etc/snmp/snmp.local.conf
 mv -f mibs/* /usr/share/snmp/mibs
 chmod g+w /usr/share/snmp/mibs
 chown root:apache /usr/share/snmp/mibs
@@ -55,22 +55,22 @@ mv -f /usr/libexec/entrypoint.d/tmux.conf /etc/tmux.conf
 #peers=(${PEER_HOSTNAMES//,/ })
 
 # set default password to your set variable 'monitor' by default
-echo "root:${ROOT_PASSWORD}" | chpasswd
+print "root:${ROOT_PASSWORD}" | chpasswd
 
 print(){
     if [ $1 == "info" ];then 
-        echo -e '\033[36m' [INFO] $2 '\033[39;49m'
+        print -e '\033[36m' [INFO] $2 '\033[39;49m'
     elif [ $1 == "warn" ];then
-        echo -e '\033[33m' [WARN] $2 '\033[39;49m'
+        print -e '\033[33m' [WARN] $2 '\033[39;49m'
     elif [ $1 == "error" ]; then
-        echo -e '\033[31m' [ERROR] $2 '\033[39;49m'
+        print -e '\033[31m' [ERROR] $2 '\033[39;49m'
     elif [ $1 == "success" ]; then
-        echo -e '\033[32m' [SUCCESS] $2 '\033[39;49m'
+        print -e '\033[32m' [SUCCESS] $2 '\033[39;49m'
     fi 
 }
 
 trigger_hooks() {
-    echo "Triggering ${1} hooks"
+    print "info" "Triggering ${1} hooks"
     /usr/libexec/entrypoint.d/hooks.py $1
 }
 
@@ -78,9 +78,9 @@ import_backup() {
     if [ ! -z "${IMPORT_BACKUP}" ]; then
         file="/usr/libexec/entrypoint.d/backups/${IMPORT_BACKUP}"
         if [ ! -e "$file" ]; then
-            echo -e "Error importing backup. Backup file ${file} does not exist."
+            print -e "Error importing backup. Backup file ${file} does not exist."
         else
-            echo -e "Backup file found. Importing: ${file} ..."
+            print -e "Backup file found. Importing: ${file} ..."
     		op5-restore -n -b ${file}
     		# remove all peer and poller nodes
     		for node in `mon node list --type=peer,poller`; do mon node remove "$node"; done;
@@ -93,15 +93,15 @@ import_license() {
     if [ ! -z "$LICENSE_KEY" ]; then
     	file="/usr/libexec/entrypoint.d/licenses/${LICENSE_KEY}"
     	if [ ! -e "$file" ]; then
-            echo -e "Error importing license. License file ${file} does not exist."
+            print -e "Error importing license. License file ${file} does not exist."
     	else
     		if [[ "$file" =~ \.lic$ ]]; then
-    			echo -e "License file found. Importing license file: ${file} ..."
+    			print -e "License file found. Importing license file: ${file} ..."
     			mv $file /etc/op5license/op5license.lic
     			chown apache:apache /etc/op5license/op5license.lic
     			chmod 664 /etc/op5license/op5license.lic
     		else
-    			echo -e "Unable to import license file. License file extension must be .lic"
+    			print -e "Unable to import license file. License file extension must be .lic"
     		fi
     	fi
     fi
@@ -121,64 +121,180 @@ service_online(){
     # service collector start
 }
 
-advertise_masters(){
-    # Create Array From Comma Delimited List
-    masters=(${MASTER_ADDRESSES//,/ })
-    for i in "${!masters[@]}"
-        do
-            if [ $1 == "add" ]; then
-                print "info" "Performing Add On ${masters[i]}"
-                mon node add ${masters[i]} type=master
-                mon node ctrl --type=master mon node add ${SELF_HOSTNAME} type=poller hostgroup=${HOSTGROUPS} takeover=no
-	            #mon node ctrl  ${masters[i]} -- /usr/local/scripts/add_sync.sh ${SELF_HOSTNAME}
-                mon node ctrl --type=master mon restart
-                grep -q "notifies = no" /opt/monitor/op5/merlin/merlin.conf || sed -i '/module {/a\        notifies = no' /opt/monitor/op5/merlin/merlin.conf
-            else
-                 for node in `mon node list --type=master`
-                    do 
-                        print "info" "Performing Remove On $node"
-                        mon node ctrl "$node" mon node remove ${SELF_HOSTNAME}
-                        mon node ctrl "$node" mon restart
-                        mon node remove "$node"
-                    done
-            fi
-        done
+remove_node(){
+for node in `mon node list`
+    do
+        mon node ctrl $node "mon node remove ${SELF_HOSTNAME} && mon restart"
+    done
 }
 
-advertise_peers(){
-    # Create Array From Comma Delimited List
-    peers=(${PEER_HOSTNAMES//,/ })
-    if [ $1 == "add" ]; then
-        for i in "${!peers[@]}"
+add_peer_to_master(){
+if [ $1 == "add" ]; then
+    do
+        print "info" "Performing Add On ${MASTER}"
+        mon node add ${MASTER} type=peer
+        mon node ctrl ${MASTER} mon node add ${SELF_HOSTNAME} type=peer
+        while true; 
             do
-                    if [[ "$?" == "0" ]]; then
-                        print "info" "Performing Add On ${peers[i]}"
-                        mon node add ${peers[i]} type=peer
-                        mon node ctrl ${peers[i]} mon node add ${SELF_HOSTNAME} type=peer
-                        #mon node ctrl  ${masters[i]} -- /usr/local/scripts/add_sync.sh ${SELF_HOSTNAME}
-                        mon node ctrl ${peers[i]} mon restart
-                    else
-                        print "error" "${peers[i]} not up, ignoring."
-                    fi
+                sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                ssh root@${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -p 1 -w 1:1 -c 1:1 -C naemon"
+                if [[ $? == 0 ]]; then
+                    naemon=0
+                else
+                    naemon=1
+                fi
+                sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                ssh root@${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -w 2:1 -c 1:1 -C merlind"
+                if [[ $? == 0 ]]; then
+                    merlin=0
+                else
+                    merlin=1
+                fi
+                if [[ $naemon == 0 ]] && [[ $merlin == 0 ]]; then
+                    print "info" "Monitor is UP on ${MASTER}"
+                    print "info" "Performing Restart On ${MASTER}"
+                    ssh root@${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes "mon restart"
+                else
+                    print "info" "Monitor is DOWN on ${MASTER}"
+                    print "info" "Testing Again"
+                    continue
+                fi
+                break
             done
-     else
-		for node in `mon node list --type=peer`
-            do 
-                print "info" "Performing Remove On $node"
-                mon node ctrl "$node" mon node remove ${SELF_HOSTNAME}
-                mon node ctrl "$node" mon restart
-                mon node remove "$node"
+        for peer in `ssh ${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes mon node list --type=peer`
+            do
+                mon node add $peer type=peer
+                mon node ctrl $peer mon node add ${SELF_HOSTNAME} type=peer
+                while true; 
+                    do
+                        sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                        ssh root@$peer -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -p 1 -w 1:1 -c 1:1 -C naemon"
+                        if [[ $? == 0 ]]; then
+                            naemon=0
+                        else
+                            naemon=1
+                        fi
+                        sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                        ssh root@$peer -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -w 2:1 -c 1:1 -C merlind"
+                        if [[ $? == 0 ]]; then
+                            merlin=0
+                        else
+                            merlin=1
+                        fi
+                        if [[ $naemon == 0 ]] && [[ $merlin == 0 ]]; then
+                            print "info" "Monitor is UP on $peer"
+                            print "info" "Performing Restart On $peer"
+                            mon node ctrl $node mon restart
+                        else
+                            print "info" "Monitor is DOWN on $peer"
+                            print "info" "Testing Again"
+                            continue
+                        fi
+                        break
+                    done
             done
+    done
+else
+    print "info" "Nothing to do for master"
+fi
+}
 
-    fi
+add_poller(){
+if [ $1 == "add" ]; then
+    do
+        while true:
+            do
+                HOSTGROUP_TEST=$(mon node ctrl ${MASTER} "mon query ls hostgroups -c name name=${HOSTGROUPS}")
+                if [[ ${HOSTGROUPS} == $HOSTGROUP_TEST ]]
+                    print "info" "hostgroup exists"
+                else
+                    print "info" "adding hostgroup"
+                    mon node ctrl ${MASTER} "op5-manage-users --update --username=api_user --realname="api_user" --group=admins --password=api_user --modules=Default"
+                    curl --insecure -XPOST -H 'content-type: application/json' -d '{"name": "test","file_id": "etc/hostgroups.cfg"}' 'https://${MASTER}/api/config/hostgroup' -u 'api_user:api_user'
+                    sleep 5s
+                    curl --insecure -XPOST 'https://${MASTER}/api/config/change' -u 'api_user:api_user'
+                    sleep 15s
+                    mon node ctrl ${MASTER} "op5-manage-users --remove --username=api_user"
+                    continue
+                fi
+                break
+            done
+        print "info" "Performing Add On ${MASTER}"
+        mon node add ${MASTER} type=master
+        mon node ctrl ${MASTER} mon node add ${SELF_HOSTNAME} type=poller hostgroup=${HOSTGROUPS} takeover=no
+        while true; 
+            do
+                sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                ssh root@${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -p 1 -w 1:1 -c 1:1 -C naemon"
+                if [[ $? == 0 ]]; then
+                    naemon=0
+                else
+                    naemon=1
+                fi
+                sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                ssh root@${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -w 2:1 -c 1:1 -C merlind"
+                if [[ $? == 0 ]]; then
+                    merlin=0
+                else
+                    merlin=1
+                fi
+                if [[ $naemon == 0 ]] && [[ $merlin == 0 ]]; then
+                    print "info" "Monitor is UP on ${MASTER}"
+                    print "info" "Performing Restart On ${MASTER}"
+                    ssh root@${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes "mon restart"
+                else
+                    print "info" "Monitor is DOWN on ${MASTER}"
+                    print "info" "Testing Again"
+                    continue
+                fi
+                break
+            done
+        for peer in `ssh ${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes mon node list --type=peer`
+            do
+                mon node add $peer type=master
+                mon node ctrl $peer mon node add ${SELF_HOSTNAME} type=poller hostgroup=${HOSTGROUPS} takeover=no
+                while true; 
+                    do
+                        sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                        ssh root@$peer -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -p 1 -w 1:1 -c 1:1 -C naemon"
+                        if [[ $? == 0 ]]; then
+                            naemon=0
+                        else
+                            naemon=1
+                        fi
+                        sleep $[ ( $RANDOM % 10 )  + 1 ]s
+                        ssh root@$peer -o IdentitiesOnly=yes -o BatchMode=yes "/opt/plugins/check_procs -w 2:1 -c 1:1 -C merlind"
+                        if [[ $? == 0 ]]; then
+                            merlin=0
+                        else
+                            merlin=1
+                        fi
+                        if [[ $naemon == 0 ]] && [[ $merlin == 0 ]]; then
+                            print "info" "Monitor is UP on $peer"
+                            print "info" "Performing Restart On $peer"
+                            mon node ctrl $node mon restart
+                        else
+                            print "info" "Monitor is DOWN on $peer"
+                            print "info" "Testing Again"
+                            continue
+                        fi
+                        break
+                    done
+            done
+    done
+    grep -q "notifies = no" /opt/monitor/op5/merlin/merlin.conf || sed -i '/module {/a\        notifies = no' /opt/monitor/op5/merlin/merlin.conf
+    # ssh ${MASTER} -o IdentitiesOnly=yes -o BatchMode=yes "asmonitor mon oconf push ${SELF_HOSTNAME}"
+else
+    print "info" "Nothing to do for master"
+fi
 }
 
 get_config(){
     # Only getting config from one master because mon oconf always exits 0
     # The fetch will initiate a restart of the the local merlind.
     # This should be the only time we need to to restart locally since new pollers will restart us.
-    print "info" "Syncing Configuration With ${masters[0]}"
-    mon node ctrl ${masters[0]} asmonitor mon oconf push ${SELF_HOSTNAME}
+    print "info" "Syncing Configuration With ${MASTER}"
+    mon node ctrl ${MASTER} asmonitor mon oconf push ${SELF_HOSTNAME}
 }
 
 
@@ -186,11 +302,9 @@ shutdown_sigend(){
     # If container is gracefully shutdown with SIGTERM (e.g. docker stop), remove
     # pre-emptively remove itself
     print "warn" "SIGTERM Caught! Removing From Cluster"
-    advertise_peers remove
-    advertise_masters remove
+    remove_node
     kill ${!}; trigger_hooks poststop
 }
-
 
 keep_swimming(){
     # This function should be the last thing to run. This is how the Container will
@@ -229,7 +343,6 @@ check_debug(){
         return
     fi
 }
-
 
 run_debug(){
     # If debugging is 1, anything to run before the debug console
@@ -306,44 +419,44 @@ set_default_route(){
     GW_ADDR=$(ip route | grep default | tr -s " " | tr " " "\n"  | grep -A1 via  | tail -1)
     GW_SRC_ADDR=$(ip route | grep default | tr -s " " | tr " " "\n"  | grep -A1 src  | tail -1)
 
-    #echo "OP5_BGP_ADDR: $OP5_BGP_ADDR"
-    #echo "   BGP_ADDR: $BGP_ADDR"
-    #echo "GW_SRC_ADDR: $GW_SRC_ADDR"
-    #echo "    GW_ADDR: $GW_ADDR"
-    #echo "     GW_INT: $GW_INT"
+    #print "OP5_BGP_ADDR: $OP5_BGP_ADDR"
+    #print "   BGP_ADDR: $BGP_ADDR"
+    #print "GW_SRC_ADDR: $GW_SRC_ADDR"
+    #print "    GW_ADDR: $GW_ADDR"
+    #print "     GW_INT: $GW_INT"
 
     EXITCODE=1
 
     if [ "x" = "x$OP5_BGP_ADDR" ]; then
-        echo "No configured BGP addr found, quitting"
+        print "No configured BGP addr found, quitting"
         exit $EXITCODE
     fi
 
     EXITCODE=$(($EXITCODE + 1))
 
     if [ "x" = "x$BGP_ADDR" ]; then
-        echo "No BGP addr found, quitting"
+        print "No BGP addr found, quitting"
         exit $EXITCODE
     fi
 
     EXITCODE=$(($EXITCODE + 1))
 
     if [ "x$OP5_BGP_ADDR" != "x$BGP_ADDR" ]; then
-        echo "Configured BGP address $OP5_BGP_ADDR does not match detected address $BGP_ADDR, quitting"
+        print "Configured BGP address $OP5_BGP_ADDR does not match detected address $BGP_ADDR, quitting"
         exit $EXITCODE
     fi
 
     EXITCODE=$(($EXITCODE + 1))
 
     if [ "x" = "x$GW_ADDR" ]; then
-        echo "Could not determine gateway address, quitting"
+        print "Could not determine gateway address, quitting"
         exit $EXITCODE
     fi
 
     EXITCODE=$(($EXITCODE + 1))
 
     if [ "x" = "x$GW_INT" ]; then
-        echo "Could not determine gateway interface, quitting"
+        print "Could not determine gateway interface, quitting"
         exit $EXITCODE
     fi
 
@@ -351,11 +464,11 @@ set_default_route(){
 
     ## route set correctly
     if [ "x$OP5_BGP_ADDR" = "x$GW_SRC_ADDR" ]; then
-        echo "Routing is correct. Exiting without changes"
+        print "Routing is correct. Exiting without changes"
         exit 0
     fi
 
-    echo "Source-address needs setting"
+    print "Source-address needs setting"
 
     ## delete the current default route
     ip route del default
@@ -366,11 +479,11 @@ set_default_route(){
     ## verify/fix
     CUR_ROUTE=$(ip route | grep default)
     if [ "x" = "x$CUR_ROUTE" ]; then
-        echo "No default route found, trying original one"
+        print "No default route found, trying original one"
         ip route add default via $GW_ADDR dev $GW_INT
         exit $EXITCODE
     else
-        echo "Success! Default route via $GW_ADDR dev $GW_INT src $BGP_ADDR"
+        print "Success! Default route via $GW_ADDR dev $GW_INT src $BGP_ADDR"
     fi
 
     exit 0
@@ -384,14 +497,14 @@ main(){
     import_license
     if [[ "${IS_PEER}" =~ ^(yes|YES|Yes)$ ]]; then
         print "info" "Checking For Online Peers"
-        advertise_peers add 
+        add_peer_to_master add 
     else
-        echo -e "No Peers to Add"
+        print -e "No Peers to Add"
     fi    
     if [[ "${IS_POLLER}" =~ ^(yes|YES|Yes)$ ]]; then
-        advertise_masters add
+        add_poller add
     else
-        echo -e "No Masters to Add"
+        print -e "No Masters to Add"
     fi
     if [[ ! -z "${OP5_BGP_ADDR}" ]]
         then
